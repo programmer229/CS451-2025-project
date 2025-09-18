@@ -89,11 +89,11 @@ int main(int argc, char **argv) {
   std::cout << "Target process ID: " << targetId << "\n\n";
 
   // Find target host information
-  auto hosts = parser.hosts();
+  auto allHosts = parser.hosts();
   Parser::Host targetHost;
   bool found = false;
-  for (const auto& host : hosts) {
-    if (host.id == targetId) {
+  for (const auto& host : allHosts) {
+    if (host.id == static_cast<unsigned long>(targetId)) {
       targetHost = host;
       found = true;
       break;
@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
 
   // Find our own host information
   Parser::Host myHost;
-  for (const auto& host : hosts) {
+  for (const auto& host : allHosts) {
     if (host.id == parser.id()) {
       myHost = host;
       break;
@@ -128,7 +128,7 @@ int main(int argc, char **argv) {
   my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
   my_addr.sin_port = myHost.port;
   
-  if (bind(sockfd, (struct sockaddr *)&my_addr, sizeof(my_addr)) < 0) {
+  if (bind(sockfd, reinterpret_cast<struct sockaddr *>(&my_addr), sizeof(my_addr)) < 0) {
     std::cerr << "Error binding socket" << std::endl;
     close(sockfd);
     return 1;
@@ -154,7 +154,7 @@ int main(int argc, char **argv) {
   for (int i = 1; i <= numMessages; i++) {
     std::string message = std::to_string(i);
     if (sendto(sockfd, message.c_str(), message.length(), 0, 
-               (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0) {
+               reinterpret_cast<struct sockaddr *>(&target_addr), sizeof(target_addr)) < 0) {
       std::cerr << "Error sending message " << i << std::endl;
     }
     // Log sent message to output
@@ -171,17 +171,17 @@ int main(int argc, char **argv) {
   
   while (true) {
     memset(buffer, 0, sizeof(buffer));
-    int n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, 
-                     (struct sockaddr *)&sender_addr, &sender_len);
+    ssize_t n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, 
+                     reinterpret_cast<struct sockaddr *>(&sender_addr), &sender_len);
     if (n > 0) {
       // Find the sender's process number by comparing IP and port
-      int senderId = -1;
-      for (const auto& host : hosts) {
+      long senderId = -1;
+      for (const auto& host : allHosts) {
         // Compare the sender's IP and port with each host
         // Both host.port and sender_addr.sin_port are in network byte order
         if (host.ip == sender_addr.sin_addr.s_addr && 
             host.port == sender_addr.sin_port) {
-          senderId = host.id;
+          senderId = static_cast<long>(host.id);
           break;
         }
       }
