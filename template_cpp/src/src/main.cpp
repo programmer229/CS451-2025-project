@@ -107,11 +107,17 @@ int main(int argc, char **argv) {
 
   // Find our own host information
   Parser::Host myHost;
+  bool myHostFound = false;
   for (const auto& host : allHosts) {
     if (host.id == parser.id()) {
       myHost = host;
+      myHostFound = true;
       break;
     }
+  }
+  if (!myHostFound) {
+    std::cerr << "Could not find our own host with ID " << parser.id() << " in hosts list" << std::endl;
+    return 1;
   }
 
   // Create UDP socket
