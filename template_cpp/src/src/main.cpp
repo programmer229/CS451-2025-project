@@ -1,6 +1,15 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <cstring>
 
 #include "parser.hpp"
 #include "hello.h"
@@ -65,13 +74,114 @@ int main(int argc, char **argv) {
 
   std::cout << "Doing some initialization...\n\n";
 
-  std::cout << "Broadcasting and delivering messages...\n\n";
+  // Parse config file
+  std::ifstream configFile(parser.configPath());
+  if (!configFile.is_open()) {
+    std::cerr << "Failed to open config file: " << parser.configPath() << std::endl;
+    return 1;
+  }
+  
+  int numMessages, targetId;
+  configFile >> numMessages >> targetId;
+  configFile.close();
+  
+  std::cout << "Number of messages to send: " << numMessages << "\n";
+  std::cout << "Target process ID: " << targetId << "\n\n";
 
-  // After a process finishes broadcasting,
-  // it waits forever for the delivery of messages.
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::hours(1));
+  // Find target host information
+  auto hosts = parser.hosts();
+  Parser::Host targetHost;
+  bool found = false;
+  for (const auto& host : hosts) {
+    if (host.id == targetId) {
+      targetHost = host;
+      found = true;
+      break;
+    }
+  }
+  
+  if (!found) {
+    std::cerr << "Target ID " << targetId << " not found in hosts list" << std::endl;
+    return 1;
   }
 
+  // Find our own host information
+  Parser::Host myHost;
+  for (const auto& host : hosts) {
+    if (host.id == parser.id()) {
+      myHost = host;
+      break;
+    }
+  }
+
+  // Create UDP socket
+  int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sockfd < 0) {
+    std::cerr << "Error opening socket" << std::endl;
+    return 1;
+  }
+
+  // Bind to our own port
+  struct sockaddr_in my_addr;
+  memset(&my_addr, 0, sizeof(my_addr));
+  my_addr.sin_family = AF_INET;
+  my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  my_addr.sin_port = myHost.port;
+  
+  if (bind(sockfd, (struct sockaddr *)&my_addr, sizeof(my_addr)) < 0) {
+    std::cerr << "Error binding socket" << std::endl;
+    close(sockfd);
+    return 1;
+  }
+
+  // Set up target address
+  struct sockaddr_in target_addr;
+  memset(&target_addr, 0, sizeof(target_addr));
+  target_addr.sin_family = AF_INET;
+  target_addr.sin_addr.s_addr = targetHost.ip;
+  target_addr.sin_port = targetHost.port;
+
+  // Open output file for writing
+  std::ofstream outputFile(parser.outputPath());
+  if (!outputFile.is_open()) {
+    std::cerr << "Failed to open output file: " << parser.outputPath() << std::endl;
+    close(sockfd);
+    return 1;
+  }
+
+  std::cout << "Sending " << numMessages << " messages...\n\n";
+  // Send messages
+  for (int i = 1; i <= numMessages; i++) {
+    std::string message = std::to_string(i);
+    if (sendto(sockfd, message.c_str(), message.length(), 0, 
+               (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0) {
+      std::cerr << "Error sending message " << i << std::endl;
+    }
+    // Log sent message to output
+    outputFile << "b " << i << std::endl;
+    outputFile.flush();
+  }
+
+  std::cout << "Listening for incoming messages...\n\n";
+
+  // Listen for incoming messages
+  char buffer[1024];
+  struct sockaddr_in sender_addr;
+  socklen_t sender_len = sizeof(sender_addr);
+  
+  while (true) {
+    memset(buffer, 0, sizeof(buffer));
+    int n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, 
+                     (struct sockaddr *)&sender_addr, &sender_len);
+    if (n > 0) {
+      // Log delivered message
+      int messageNum = std::stoi(std::string(buffer, n));
+      outputFile << "d " << messageNum << std::endl;
+      outputFile.flush();
+    }
+  }
+
+  outputFile.close();
+  close(sockfd);
   return 0;
 }
