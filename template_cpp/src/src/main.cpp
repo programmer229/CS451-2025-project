@@ -178,17 +178,18 @@ int main(int argc, char **argv) {
       int senderId = -1;
       for (const auto& host : hosts) {
         // Compare the sender's IP and port with each host
+        // Both host.port and sender_addr.sin_port are in network byte order
         if (host.ip == sender_addr.sin_addr.s_addr && 
-            host.port == ntohs(sender_addr.sin_port)) {
+            host.port == sender_addr.sin_port) {
           senderId = host.id;
           break;
         }
       }
       
       if (senderId != -1) {
-        // Log delivered message with sender's process number
-        int messageNum = std::stoi(std::string(buffer, n));
-        outputFile << "d " << senderId << " " << messageNum << std::endl;
+        // Log delivered message with sender's process number and the message content as a string
+        std::string messageContent(buffer, n);
+        outputFile << "d " << senderId << " " << messageContent << std::endl;
         outputFile.flush();
       } else {
         std::cerr << "Received message from unknown sender" << std::endl;
