@@ -236,7 +236,7 @@ int main(int argc, char **argv) {
     }
 
     std::cout << "Sending " << numMessages << " messages...\n\n";
-    const auto resendInterval = std::chrono::milliseconds(300);
+    const auto resendInterval = std::chrono::milliseconds(1);
     char buffer[1024];
 
     for (int i = 1; i <= numMessages; i++) {
