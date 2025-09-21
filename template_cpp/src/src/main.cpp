@@ -147,25 +147,23 @@ int main(int argc, char **argv) {
   target_addr.sin_addr.s_addr = targetHost.ip;
   target_addr.sin_port = targetHost.port;
 
-  // Open output file for writing
-  std::ofstream outputFile(parser.outputPath());
-  if (!outputFile.is_open()) {
-    std::cerr << "Failed to open output file: " << parser.outputPath() << std::endl;
-    close(sockfd);
-    return 1;
-  }
-
-  std::cout << "Sending " << numMessages << " messages...\n\n";
-  // Send messages
-  for (int i = 1; i <= numMessages; i++) {
-    std::string message = std::to_string(i);
-    if (sendto(sockfd, message.c_str(), message.length(), 0, 
-               reinterpret_cast<struct sockaddr *>(&target_addr), sizeof(target_addr)) < 0) {
-      std::cerr << "Error sending message " << i << std::endl;
+  {
+    std::ofstream outputFile(parser.outputPath());
+    if (!outputFile.is_open()) {
+      std::cerr << "Failed to open output file: " << parser.outputPath() << std::endl;
+      close(sockfd);
+      return 1;
     }
-    // Log sent message to output
-    outputFile << "b " << i << std::endl;
-    outputFile.flush();
+
+    std::cout << "Sending " << numMessages << " messages...\n\n";
+    for (int i = 1; i <= numMessages; i++) {
+      std::string message = std::to_string(i);
+      if (sendto(sockfd, message.c_str(), message.length(), 0,
+                 reinterpret_cast<struct sockaddr *>(&target_addr), sizeof(target_addr)) < 0) {
+        std::cerr << "Error sending message " << i << std::endl;
+      }
+      outputFile << "b " << i << std::endl;
+    }
   }
 
   std::cout << "Listening for incoming messages...\n\n";
@@ -195,15 +193,17 @@ int main(int argc, char **argv) {
       if (senderId != -1) {
         // Log delivered message with sender's process number and the message content as a string
         std::string messageContent(buffer, n);
+        std::ofstream outputFile(parser.outputPath(), std::ios::app);
+        if (!outputFile.is_open()) {
+          std::cerr << "Failed to open output file for appending: " << parser.outputPath() << std::endl;
+          break;
+        }
         outputFile << "d " << senderId << " " << messageContent << std::endl;
-        outputFile.flush();
       } else {
         std::cerr << "Received message from unknown sender" << std::endl;
       }
     }
   }
-
-  outputFile.close();
   close(sockfd);
   return 0;
 }
