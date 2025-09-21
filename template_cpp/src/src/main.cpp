@@ -147,7 +147,9 @@ int main(int argc, char **argv) {
   target_addr.sin_addr.s_addr = targetHost.ip;
   target_addr.sin_port = targetHost.port;
 
-  {
+  if (targetHost.id == parser.id()) {
+    std::cout << "Configured target is this process; skipping send phase.\n\n";
+  } else {
     std::ofstream outputFile(parser.outputPath());
     if (!outputFile.is_open()) {
       std::cerr << "Failed to open output file: " << parser.outputPath() << std::endl;
