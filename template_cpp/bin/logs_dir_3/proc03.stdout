@@ -1,0 +1,46 @@
+Source files that end in .c will be compiled automatically with gcc,
+while source files that end in .cpp will be compiled automatically with g++.
+For those that prefer C, they can either use the provided C++
+argument parser and write everything else in C, or delete the
+provided main.cpp and start from scratch.
+Those who have both .c and .cpp files should ensure to have a compatible ABI when calling C functions from C++ (see `hello.h` on how to do this).
+
+My PID: 82296
+From a new terminal type `kill -SIGINT 82296` or `kill -SIGTERM 82296` to stop processing packets
+
+My ID: 3
+
+List of resolved hosts is:
+==========================
+1
+Human-readable IP: 127.0.0.1
+Machine-readable IP: 16777343
+Human-readbale Port: 11001
+Machine-readbale Port: 63786
+
+2
+Human-readable IP: 127.0.0.1
+Machine-readable IP: 16777343
+Human-readbale Port: 11002
+Machine-readbale Port: 64042
+
+3
+Human-readable IP: 127.0.0.1
+Machine-readable IP: 16777343
+Human-readbale Port: 11003
+Machine-readbale Port: 64298
+
+
+Path to output:
+===============
+/home/programmer228/work/cpp/CS451-2025-project/template_cpp/bin/logs_dir_3/proc03.output
+
+Path to config:
+===============
+template_cpp/bin/logs_dir_3/config
+
+Doing some initialization...
+
+Number of messages to send: 10
+Target process ID: 1
+
