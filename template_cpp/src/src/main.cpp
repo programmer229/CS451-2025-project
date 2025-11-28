@@ -23,10 +23,19 @@
 #include "urb.hpp"
 #include "fifo_broadcast.hpp"
 
-static bool running = true;
-
 static void stop(int) {
-  running = false;
+  // reset signal handlers to default
+  signal(SIGTERM, SIG_DFL);
+  signal(SIGINT, SIG_DFL);
+
+  // immediately stop network packet processing
+  std::cout << "Immediately stopping network packet processing.\n";
+
+  // write/flush output file if necessary
+  std::cout << "Writing output.\n";
+
+  // exit directly from signal handler
+  exit(0);
 }
 
 int main(int argc, char **argv) {
@@ -185,7 +194,7 @@ int main(int argc, char **argv) {
   struct sockaddr_in sender_addr;
   socklen_t sender_len = sizeof(sender_addr);
 
-  while (running) {
+  while (true) {
       fd_set readfds;
       FD_ZERO(&readfds);
       FD_SET(sockfd, &readfds);
