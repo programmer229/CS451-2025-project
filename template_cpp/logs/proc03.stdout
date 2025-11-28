@@ -5,7 +5,7 @@ argument parser and write everything else in C, or delete the
 provided main.cpp and start from scratch.
 Those who have both .c and .cpp files should ensure to have a compatible ABI when calling C functions from C++ (see `hello.h` on how to do this).
 
-My PID: 11347
+My PID: 18057
 My ID: 3
 
 List of resolved hosts is:
@@ -40,5 +40,6 @@ Path to config:
 Number of messages to broadcast: 100
 
 Broadcasting 100 messages...
+Entered event loop
 Immediately stopping network packet processing.
 Writing output.

@@ -79,7 +79,7 @@ public:
         auto now = std::chrono::steady_clock::now();
         for (auto& [targetId, messages] : pendingMessages_) {
             for (auto& pm : messages) {
-                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - pm.lastSendTime).count() > 1000) { // 1 second timeout
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - pm.lastSendTime).count() > 100) { // 100ms timeout
                     sendUdp(targetId, pm.msg);
                     pm.lastSendTime = now;
                 }

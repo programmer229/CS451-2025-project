@@ -182,6 +182,11 @@ int main(int argc, char **argv) {
   FIFOBroadcast fifo(parser.id(), urb, fifoDeliver);
   fifoPtr = &fifo;
 
+  // Event loop variables
+  char buffer[65536];
+  struct sockaddr_in sender_addr;
+  socklen_t sender_len = sizeof(sender_addr);
+
   // Broadcast loop
   std::cout << "Broadcasting " << numMessages << " messages...\n";
   
@@ -193,13 +198,40 @@ int main(int argc, char **argv) {
       
       fifo.broadcast(msg);
       outputFile << "b " << i << "\n";
+      
+      // Process incoming packets to prevent buffer overflow
+      while (true) {
+          fd_set readfds;
+          FD_ZERO(&readfds);
+          FD_SET(sockfd, &readfds);
+          
+          struct timeval tv;
+          tv.tv_sec = 0;
+          tv.tv_usec = 0; // Non-blocking check
+          
+          int ready = select(sockfd + 1, &readfds, nullptr, nullptr, &tv);
+          
+          if (ready > 0) {
+              if (FD_ISSET(sockfd, &readfds)) {
+                  memset(buffer, 0, sizeof(buffer));
+                  ssize_t n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, 
+                                   reinterpret_cast<struct sockaddr *>(&sender_addr), &sender_len);
+                  if (n > 0) {
+                      std::string data(buffer, n);
+                      pl.receive(data, sender_addr);
+                  }
+              }
+          } else {
+              break;
+          }
+      }
+      
+      pl.update();
   }
+  
+  std::cout << "Entered event loop\n";
 
   // Event loop
-  char buffer[65536];
-  struct sockaddr_in sender_addr;
-  socklen_t sender_len = sizeof(sender_addr);
-
   while (true) {
       fd_set readfds;
       FD_ZERO(&readfds);
