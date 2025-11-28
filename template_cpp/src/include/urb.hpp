@@ -21,14 +21,12 @@ public:
             acks_[msgId].insert(myId_); // We have seen it
             
             for (int i = 1; i <= numProcesses_; ++i) {
-                if (static_cast<unsigned long>(i) != myId_) {
                     Message toSend = msg;
                     toSend.sender_id = myId_;
                     static unsigned long pl_seq = 0;
                     toSend.seq_no = ++pl_seq;
                     
                     pl_.send(i, toSend);
-                }
             }
         }
     }
@@ -47,13 +45,11 @@ public:
             forwarded_.insert(msgId);
             
             for (int i = 1; i <= numProcesses_; ++i) {
-                if (static_cast<unsigned long>(i) != myId_) {
                     Message toSend = msg;
                     toSend.sender_id = myId_;
                     static unsigned long pl_seq = 0;
                     toSend.seq_no = ++pl_seq;
                     pl_.send(i, toSend);
-                }
             }
         }
         

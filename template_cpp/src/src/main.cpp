@@ -23,6 +23,8 @@
 #include "urb.hpp"
 #include "fifo_broadcast.hpp"
 
+static std::ofstream outputFile;
+
 static void stop(int) {
   // reset signal handlers to default
   signal(SIGTERM, SIG_DFL);
@@ -33,6 +35,10 @@ static void stop(int) {
 
   // write/flush output file if necessary
   std::cout << "Writing output.\n";
+  if (outputFile.is_open()) {
+    outputFile.flush();
+    outputFile.close();
+  }
 
   // exit directly from signal handler
   exit(0);
@@ -121,7 +127,7 @@ int main(int argc, char **argv) {
   }
 
   // Open output file
-  std::ofstream outputFile(parser.outputPath());
+  outputFile.open(parser.outputPath());
   if (!outputFile.is_open()) {
       std::cerr << "Failed to open output file" << std::endl;
       return 1;
@@ -221,8 +227,10 @@ int main(int argc, char **argv) {
   }
 
   std::cout << "Stopping...\n";
-  outputFile.flush();
-  outputFile.close();
+  if (outputFile.is_open()) {
+    outputFile.flush();
+    outputFile.close();
+  }
   close(sockfd);
 
   return 0;
