@@ -22,6 +22,7 @@
 #include "perfect_link.hpp"
 #include "urb.hpp"
 #include "fifo_broadcast.hpp"
+#include "lattice_agreement.hpp"
 
 static std::ofstream outputFile;
 
@@ -57,39 +58,31 @@ int main(int argc, char **argv) {
   std::cout << "My PID: " << getpid() << "\n";
   std::cout << "My ID: " << parser.id() << "\n\n";
 
-  std::cout << "List of resolved hosts is:\n";
-  std::cout << "==========================\n";
   auto hosts = parser.hosts();
-  for (auto &host : hosts) {
-    std::cout << host.id << "\n";
-    std::cout << "Human-readable IP: " << host.ipReadable() << "\n";
-    std::cout << "Machine-readable IP: " << host.ip << "\n";
-    std::cout << "Human-readbale Port: " << host.portReadable() << "\n";
-    std::cout << "Machine-readbale Port: " << host.port << "\n";
-    std::cout << "\n";
-  }
-  std::cout << "\n";
-
-  std::cout << "Path to output:\n";
-  std::cout << "===============\n";
-  std::cout << parser.outputPath() << "\n\n";
-
-  std::cout << "Path to config:\n";
-  std::cout << "===============\n";
-  std::cout << parser.configPath() << "\n\n";
-
-  // Parse config file
+  
+  // Parse config file to determine mode
   std::ifstream configFile(parser.configPath());
   if (!configFile.is_open()) {
     std::cerr << "Failed to open config file: " << parser.configPath() << std::endl;
     return 1;
   }
   
-  int numMessages;
-  configFile >> numMessages;
-  configFile.close();
+  std::string line;
+  if (!std::getline(configFile, line)) {
+      std::cerr << "Empty config file" << std::endl;
+      return 1;
+  }
   
-  std::cout << "Number of messages to broadcast: " << numMessages << "\n\n";
+  std::stringstream ss(line);
+  int val;
+  std::vector<int> configTokens;
+  while(ss >> val) configTokens.push_back(val);
+  
+  bool isLatticeAgreement = (configTokens.size() >= 3);
+  int numMessagesOrProposals = configTokens.empty() ? 0 : configTokens[0];
+  
+  std::cout << "Config Mode: " << (isLatticeAgreement ? "Lattice Agreement" : "FIFO/PL") << "\n";
+  std::cout << "Count: " << numMessagesOrProposals << "\n\n";
 
   // Create UDP socket
   int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -133,118 +126,80 @@ int main(int argc, char **argv) {
       return 1;
   }
 
-  // Instantiate layers
-  // Forward declarations for callbacks
-  
-  // FIFO Callback: Write to log
-  auto fifoDeliver = [&](unsigned long from, const Message& msg) {
-      outputFile << "d " << from << " " << msg.payload << "\n"; // payload is the sequence number
-      // Flush periodically or let OS handle it? 
-      // For correctness in crash scenarios, we might want to flush often, 
-      // but for performance we shouldn't flush every line.
-      // The instructions say: "You may consider more sophisticated logging approaches... 
-      // writing to files is the only action we allow a process to do after receiving a SIGINT or SIGTERM signal."
-      // So we can rely on the OS buffer and flush on exit.
-  };
-
-  // URB Callback: Pass to FIFO
-  // We need to construct objects first.
-  
-  // We need to break the dependency cycle or use references.
-  // PL -> URB -> FIFO
-  // PL callback calls URB.deliver
-  // URB callback calls FIFO.deliver
-  
-  // But objects need to be constructed.
-  
-  // PerfectLink needs a callback.
-  // URB needs PerfectLink and a callback.
-  // FIFO needs URB and a callback.
-  
-  // We can use std::function and bind/lambda to defer resolution.
-  
-  UniformReliableBroadcast* urbPtr = nullptr;
-  FIFOBroadcast* fifoPtr = nullptr;
-  
-  auto plDeliver = [&](unsigned long from, const Message& msg) {
-      if (urbPtr) urbPtr->deliver(from, msg);
-  };
-  
-  PerfectLink pl(parser.id(), sockfd, hosts, plDeliver);
-  
-  auto urbDeliver = [&](unsigned long from, const Message& msg) {
-      if (fifoPtr) fifoPtr->deliver(from, msg);
-  };
-  
-  UniformReliableBroadcast urb(parser.id(), pl, static_cast<int>(hosts.size()), urbDeliver);
-  urbPtr = &urb;
-  
-  FIFOBroadcast fifo(parser.id(), urb, fifoDeliver);
-  fifoPtr = &fifo;
-
-  // Event loop variables
+  // Networking buffers
   char buffer[65536];
   struct sockaddr_in sender_addr;
   socklen_t sender_len = sizeof(sender_addr);
-
-  // Broadcast loop
-  std::cout << "Broadcasting " << numMessages << " messages...\n";
   
-  for (int i = 1; i <= numMessages; ++i) {
-      Message msg;
-      msg.type = MessageType::URB_MSG;
-      msg.payload = std::to_string(i);
-      // sender/seq set by FIFO
+  if (isLatticeAgreement) {
+      // --- Milestone 3: Lattice Agreement ---
       
-      fifo.broadcast(msg);
-      outputFile << "b " << i << "\n";
+      // Parse Proposals
+      std::vector<std::set<int>> proposals;
+      for (int i = 0; i < numMessagesOrProposals; ++i) {
+          if (std::getline(configFile, line)) {
+              std::set<int> p;
+              std::stringstream pss(line);
+              int v;
+              while (pss >> v) p.insert(v);
+              proposals.push_back(p);
+          }
+      }
+      configFile.close();
       
-      // Process incoming packets to prevent buffer overflow
-      while (true) {
+      // Output Ordering Logic
+      std::map<int, std::set<int>> pendingDecisions;
+      int nextSlotToPrint = 0;
+      
+      auto decideCallback = [&](int slot, const std::set<int>& value) {
+           pendingDecisions[slot] = value;
+           while (pendingDecisions.count(nextSlotToPrint)) {
+               const auto& s = pendingDecisions[nextSlotToPrint];
+               bool first = true;
+               for (int x : s) {
+                   if (!first) outputFile << " ";
+                   outputFile << x;
+                   first = false;
+               }
+               outputFile << "\n";
+               nextSlotToPrint++;
+           }
+      };
+      
+      // Setup Layers
+      LatticeAgreement* laPtr = nullptr;
+      
+      auto plDeliver = [&](unsigned long from, const Message& msg) {
+          // Only route LA messages to LatticeAgreement
+          if (msg.type == MessageType::LA_PROPOSAL || 
+              msg.type == MessageType::LA_ACK || 
+              msg.type == MessageType::LA_NACK) {
+              if (laPtr) laPtr->receive(from, msg);
+          }
+      };
+      
+      PerfectLink pl(parser.id(), sockfd, hosts, plDeliver);
+      LatticeAgreement la(parser.id(), pl, static_cast<int>(hosts.size()), decideCallback);
+      laPtr = &la;
+      
+      // Start Agreement for all slots
+      for (int i = 0; i < static_cast<int>(proposals.size()); ++i) {
+          la.propose(i, proposals[i]);
+      }
+      
+      // Event Loop
+      while (nextSlotToPrint < numMessagesOrProposals) {
           fd_set readfds;
           FD_ZERO(&readfds);
           FD_SET(sockfd, &readfds);
           
           struct timeval tv;
           tv.tv_sec = 0;
-          tv.tv_usec = 0; // Non-blocking check
+          tv.tv_usec = 1000; // 1ms
           
           int ready = select(sockfd + 1, &readfds, nullptr, nullptr, &tv);
           
-          if (ready > 0) {
-              if (FD_ISSET(sockfd, &readfds)) {
-                  memset(buffer, 0, sizeof(buffer));
-                  ssize_t n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, 
-                                   reinterpret_cast<struct sockaddr *>(&sender_addr), &sender_len);
-                  if (n > 0) {
-                      std::string data(buffer, n);
-                      pl.receive(data, sender_addr);
-                  }
-              }
-          } else {
-              break;
-          }
-      }
-      
-      pl.update();
-  }
-  
-  std::cout << "Entered event loop\n";
-
-  // Event loop
-  while (true) {
-      fd_set readfds;
-      FD_ZERO(&readfds);
-      FD_SET(sockfd, &readfds);
-      
-      struct timeval tv;
-      tv.tv_sec = 0;
-      tv.tv_usec = 10000; // 10ms timeout for update loop
-      
-      int ready = select(sockfd + 1, &readfds, nullptr, nullptr, &tv);
-      
-      if (ready > 0) {
-          if (FD_ISSET(sockfd, &readfds)) {
+          if (ready > 0 && FD_ISSET(sockfd, &readfds)) {
               memset(buffer, 0, sizeof(buffer));
               ssize_t n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, 
                                reinterpret_cast<struct sockaddr *>(&sender_addr), &sender_len);
@@ -253,9 +208,101 @@ int main(int argc, char **argv) {
                   pl.receive(data, sender_addr);
               }
           }
+          
+          pl.update();
       }
       
-      pl.update();
+  } else {
+      // --- Milestone 1 & 2: Perfect Links / FIFO ---
+      configFile.close();
+      
+      // FIFO Callback
+      auto fifoDeliver = [&](unsigned long from, const Message& msg) {
+          outputFile << "d " << from << " " << msg.payload << "\n"; 
+      };
+
+      UniformReliableBroadcast* urbPtr = nullptr;
+      FIFOBroadcast* fifoPtr = nullptr;
+      
+      auto plDeliver = [&](unsigned long from, const Message& msg) {
+          if (msg.type == MessageType::URB_MSG) {
+              if (urbPtr) urbPtr->deliver(from, msg);
+          }
+      };
+      
+      PerfectLink pl(parser.id(), sockfd, hosts, plDeliver);
+      
+      auto urbDeliver = [&](unsigned long from, const Message& msg) {
+          if (fifoPtr) fifoPtr->deliver(from, msg);
+      };
+      
+      UniformReliableBroadcast urb(parser.id(), pl, static_cast<int>(hosts.size()), urbDeliver);
+      urbPtr = &urb;
+      
+      FIFOBroadcast fifo(parser.id(), urb, fifoDeliver);
+      fifoPtr = &fifo;
+
+      // Broadcast loop
+      std::cout << "Broadcasting " << numMessagesOrProposals << " messages...\n";
+      
+      for (int i = 1; i <= numMessagesOrProposals; ++i) {
+          Message msg;
+          msg.type = MessageType::URB_MSG;
+          msg.payload = std::to_string(i);
+          
+          fifo.broadcast(msg);
+          outputFile << "b " << i << "\n";
+          
+          // Drain queue
+          while (true) {
+              fd_set readfds;
+              FD_ZERO(&readfds);
+              FD_SET(sockfd, &readfds);
+              
+              struct timeval tv;
+              tv.tv_sec = 0;
+              tv.tv_usec = 0;
+              
+              int ready = select(sockfd + 1, &readfds, nullptr, nullptr, &tv);
+              
+              if (ready > 0 && FD_ISSET(sockfd, &readfds)) {
+                   memset(buffer, 0, sizeof(buffer));
+                   ssize_t n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, 
+                                    reinterpret_cast<struct sockaddr *>(&sender_addr), &sender_len);
+                   if (n > 0) {
+                       std::string data(buffer, n);
+                       pl.receive(data, sender_addr);
+                   }
+              } else {
+                  break;
+              }
+          }
+          pl.update();
+      }
+      
+      // Final event loop
+      while (true) {
+          fd_set readfds;
+          FD_ZERO(&readfds);
+          FD_SET(sockfd, &readfds);
+          
+          struct timeval tv;
+          tv.tv_sec = 0;
+          tv.tv_usec = 10000; // 10ms
+          
+          int ready = select(sockfd + 1, &readfds, nullptr, nullptr, &tv);
+          
+          if (ready > 0 && FD_ISSET(sockfd, &readfds)) {
+              memset(buffer, 0, sizeof(buffer));
+              ssize_t n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, 
+                               reinterpret_cast<struct sockaddr *>(&sender_addr), &sender_len);
+              if (n > 0) {
+                  std::string data(buffer, n);
+                  pl.receive(data, sender_addr);
+              }
+          }
+          pl.update();
+      }
   }
 
   std::cout << "Stopping...\n";

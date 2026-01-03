@@ -7,7 +7,10 @@
 
 enum class MessageType {
     PL_ACK,
-    URB_MSG
+    URB_MSG,
+    LA_PROPOSAL,
+    LA_ACK,
+    LA_NACK
 };
 
 struct Message {
