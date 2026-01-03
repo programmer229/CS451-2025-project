@@ -82,13 +82,20 @@ int main(int argc, char **argv) {
   int numMessagesOrProposals = configTokens.empty() ? 0 : configTokens[0];
   
   std::cout << "Config Mode: " << (isLatticeAgreement ? "Lattice Agreement" : "FIFO/PL") << "\n";
-  std::cout << "Count: " << numMessagesOrProposals << "\n\n";
+  std::cout << "Count: " << numMessagesOrProposals << "\n";
+  std::cout << "Hosts count: " << hosts.size() << "\n\n";
 
   // Create UDP socket
   int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd < 0) {
     std::cerr << "Error opening socket" << std::endl;
     return 1;
+  }
+  
+  int opt = 1;
+  if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+      perror("setsockopt");
+      return 1;
   }
 
   // Bind to our own port
@@ -120,6 +127,7 @@ int main(int argc, char **argv) {
   }
 
   // Open output file
+  std::cout << "Opening output file: " << parser.outputPath() << "\n";
   outputFile.open(parser.outputPath());
   if (!outputFile.is_open()) {
       std::cerr << "Failed to open output file" << std::endl;
@@ -162,6 +170,7 @@ int main(int argc, char **argv) {
                    first = false;
                }
                outputFile << "\n";
+               outputFile.flush(); // Keep flush for safety
                nextSlotToPrint++;
            }
       };
@@ -188,7 +197,9 @@ int main(int argc, char **argv) {
       }
       
       // Event Loop
-      while (nextSlotToPrint < numMessagesOrProposals) {
+      // Continue processing network messages even after deciding all slots
+      // so we can help other nodes catch up.
+      while (true) {
           fd_set readfds;
           FD_ZERO(&readfds);
           FD_SET(sockfd, &readfds);
@@ -210,6 +221,8 @@ int main(int argc, char **argv) {
           }
           
           pl.update();
+          
+          // Optional: Break if signal received (handled by signal handler anyway)
       }
       
   } else {
@@ -305,12 +318,10 @@ int main(int argc, char **argv) {
       }
   }
 
-  std::cout << "Stopping...\n";
-  if (outputFile.is_open()) {
-    outputFile.flush();
-    outputFile.close();
+  std::cout << "Done deciding. Waiting for termination...\n";
+  while (true) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  close(sockfd);
 
   return 0;
 }
