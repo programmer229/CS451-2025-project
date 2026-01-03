@@ -62,9 +62,9 @@ private:
     struct InstanceState {
         // Proposer state
         bool active = false;
-        int ack_count = 0;
-        int nack_count = 0;
-        int active_proposal_number = 0;
+        size_t ack_count = 0;
+        size_t nack_count = 0;
+        size_t active_proposal_number = 0;
         std::set<int> proposed_value;
         bool decided = false;
         
@@ -103,7 +103,7 @@ private:
         return res;
     }
 
-    void broadcast(int slot, MessageType type, int proposal_number, const std::set<int>& payloadSet = {}) {
+    void broadcast(int slot, MessageType type, size_t proposal_number, const std::set<int>& payloadSet = {}) {
         Message msg;
         msg.type = type;
         msg.original_sender_id = static_cast<unsigned long>(slot);
@@ -117,7 +117,7 @@ private:
         }
     }
 
-    void send(unsigned long target, int slot, MessageType type, int proposal_number, const std::set<int>& payloadSet = {}) {
+    void send(unsigned long target, int slot, MessageType type, size_t proposal_number, const std::set<int>& payloadSet = {}) {
         Message msg;
         msg.type = type;
         msg.sender_id = myId_;
@@ -144,7 +144,7 @@ private:
 
     void handleAck(int slot, int proposal_number, InstanceState& state) {
         // Proposer Logic
-        if (state.active && proposal_number == state.active_proposal_number) {
+        if (state.active && static_cast<size_t>(proposal_number) == state.active_proposal_number) {
             state.ack_count++;
             // std::cout << "Node " << myId_ << " Got ACK from ? for slot " << slot << " cnt " << state.ack_count << "\n";
             checkProposerCondition(slot, state);
@@ -153,7 +153,7 @@ private:
 
     void handleNack(int slot, int proposal_number, const std::set<int>& value, InstanceState& state) {
         // Proposer Logic
-        if (state.active && proposal_number == state.active_proposal_number) {
+        if (state.active && static_cast<size_t>(proposal_number) == state.active_proposal_number) {
             state.proposed_value.insert(value.begin(), value.end());
             state.nack_count++;
             // std::cout << "Node " << myId_ << " Got NACK from ? for slot " << slot << " cnt " << state.nack_count << "\n";
@@ -164,11 +164,11 @@ private:
     void checkProposerCondition(int slot, InstanceState& state) {
         if (!state.active) return;
         
-        int total_responses = state.ack_count + state.nack_count;
+        size_t total_responses = state.ack_count + state.nack_count;
         int f = (numProcesses_ - 1) / 2;
         // int majority = f + 1; 
         
-        int quorum = (numProcesses_ / 2) + 1;
+        size_t quorum = static_cast<size_t>((numProcesses_ / 2) + 1);
 
         if (state.nack_count > 0 && total_responses >= quorum) {
             // Majority with at least one NACK -> Retry with updated value
